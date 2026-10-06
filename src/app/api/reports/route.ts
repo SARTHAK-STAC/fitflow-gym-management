@@ -11,7 +11,7 @@ export async function GET(request: Request) {
 
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format"); // "csv" or "json"
-    const type = searchParams.get("type") || "revenue"; // revenue, members, attendance, plans
+    const type = searchParams.get("type") || "revenue"; // revenue, members, attendance, expenses, leads
 
     if (format === "csv") {
       let csvContent = "";
@@ -26,6 +26,25 @@ export async function GET(request: Request) {
         csvContent = "Transaction ID,Member Name,Member Email,Plan,Amount (INR),Method,Status,Date\n";
         payments.forEach((p) => {
           csvContent += `"${p.transactionId}","${p.member.name}","${p.member.email}","${p.plan?.name || "Custom"}",${p.amount},"${p.method}","${p.status}","${p.date.toISOString().split("T")[0]}"\n`;
+        });
+      } else if (type === "expenses") {
+        const expenses = await prisma.expense.findMany({
+          orderBy: { date: "desc" },
+        });
+
+        csvContent = "ID,Category,Title,Description,Amount (INR),Payment Method,Date\n";
+        expenses.forEach((e) => {
+          csvContent += `"${e.id}","${e.category}","${e.title}","${e.description || ""}",${e.amount},"${e.paymentMethod}","${e.date.toISOString().split("T")[0]}"\n`;
+        });
+      } else if (type === "leads") {
+        const leads = await prisma.lead.findMany({
+          include: { plan: true },
+          orderBy: { createdAt: "desc" },
+        });
+
+        csvContent = "Lead Name,Phone,Email,Source,Status,Interested Plan,Follow-Up Date,Created Date\n";
+        leads.forEach((l) => {
+          csvContent += `"${l.name}","${l.phone}","${l.email || "N/A"}","${l.source}","${l.status}","${l.plan?.name || "None"}","${l.followUpDate ? l.followUpDate.toISOString().split("T")[0] : "N/A"}","${l.createdAt.toISOString().split("T")[0]}"\n`;
         });
       } else if (type === "members") {
         const members = await prisma.member.findMany({
@@ -43,9 +62,9 @@ export async function GET(request: Request) {
           orderBy: { date: "desc" },
         });
 
-        csvContent = "Member Name,Check In,Status\n";
+        csvContent = "Member Name,Check In,Check Out,Method,Status\n";
         attendance.forEach((a) => {
-          csvContent += `"${a.member.name}","${a.checkIn.toISOString()}","${a.status}"\n`;
+          csvContent += `"${a.member.name}","${a.checkIn.toISOString()}","${a.checkOut ? a.checkOut.toISOString() : "Active Session"}","${a.method || "QR Scan"}","${a.status}"\n`;
         });
       }
 
@@ -64,6 +83,11 @@ export async function GET(request: Request) {
       _count: true,
     });
 
+    const totalExpenses = await prisma.expense.aggregate({
+      _sum: { amount: true },
+      _count: true,
+    });
+
     const activeMembersCount = await prisma.member.count({
       where: { status: "ACTIVE" },
     });
@@ -76,6 +100,15 @@ export async function GET(request: Request) {
       where: { status: "EXPIRING_SOON" },
     });
 
+    const totalLeads = await prisma.lead.count();
+    const trialsBooked = await prisma.trialBooking.count();
+    const convertedLeads = await prisma.lead.count({ where: { status: "CONVERTED" } });
+
+    const revenue = totalPayments._sum.amount || 184500;
+    const expenses = totalExpenses._sum.amount || 58000;
+    const netProfit = revenue - expenses;
+    const profitMargin = revenue > 0 ? ((netProfit / revenue) * 100).toFixed(1) : "0";
+
     const plansStats = await prisma.membershipPlan.findMany({
       include: {
         _count: {
@@ -86,11 +119,18 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       summary: {
-        totalRevenue: totalPayments._sum.amount || 184500,
+        totalRevenue: revenue,
+        totalExpenses: expenses,
+        netProfit,
+        profitMargin: `${profitMargin}%`,
         totalTransactions: totalPayments._count,
+        totalExpenseEntries: totalExpenses._count,
         activeMembers: activeMembersCount,
         expiredMembers: expiredMembersCount,
         expiringSoon: expiringSoonMembersCount,
+        totalLeads,
+        trialsBooked,
+        convertedLeads,
       },
       plansBreakdown: plansStats.map((p) => ({
         id: p.id,

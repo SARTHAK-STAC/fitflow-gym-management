@@ -27,18 +27,86 @@ import {
   MessageCircle,
   Menu,
   X,
+  Calendar,
 } from "lucide-react";
+import { generateWhatsAppLink, WhatsAppTemplates } from "@/lib/whatsapp";
 
 export default function LandingPage() {
-  const [bookingSuccess, setBookingSuccess] = useState(false);
-  const [trialName, setTrialName] = useState("");
-  const [trialPhone, setTrialPhone] = useState("");
-  const [trialDate, setTrialDate] = useState("");
+  const [plans, setPlans] = useState<any[]>([]);
+  const [bookingSuccess, setBookingSuccess] = useState<any | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const handleBookTrial = (e: React.FormEvent) => {
+  const tomorrow = new Date(Date.now() + 86400000).toISOString().split("T")[0];
+
+  const [formData, setFormData] = useState({
+    name: "",
+    phone: "",
+    email: "",
+    preferredDate: tomorrow,
+    preferredTime: "07:00 AM - 10:00 AM (Morning)",
+    planId: "",
+    message: "",
+  });
+
+  React.useEffect(() => {
+    fetch("/api/plans")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.plans) {
+          setPlans(data.plans);
+          // Default to Pro plan if available
+          const proPlan = data.plans.find((p: any) => p.name.toLowerCase().includes("pro"));
+          if (proPlan) {
+            setFormData((prev) => ({ ...prev, planId: proPlan.id }));
+          } else if (data.plans[0]) {
+            setFormData((prev) => ({ ...prev, planId: data.plans[0].id }));
+          }
+        }
+      })
+      .catch((err) => console.error("Error loading plans:", err));
+  }, []);
+
+  const selectPlanForTrial = (planName: string) => {
+    const matched = plans.find((p) => p.name.toLowerCase().includes(planName.toLowerCase()));
+    if (matched) {
+      setFormData((prev) => ({ ...prev, planId: matched.id }));
+    }
+  };
+
+  const handleBookTrial = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (trialName && trialPhone) {
-      setBookingSuccess(true);
+    setErrorMsg("");
+
+    if (!formData.name.trim() || !formData.phone.trim()) {
+      setErrorMsg("Please enter your name and contact phone number.");
+      return;
+    }
+
+    try {
+      setIsSubmitting(true);
+      const res = await fetch("/api/trial-bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to reserve trial pass");
+      }
+
+      setBookingSuccess({
+        ...data.booking,
+        name: formData.name,
+        phone: formData.phone,
+        date: formData.preferredDate,
+        time: formData.preferredTime,
+      });
+    } catch (err: any) {
+      setErrorMsg(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -391,7 +459,7 @@ export default function LandingPage() {
               </div>
 
               <div className="mt-8 pt-6 border-t border-neutral-800">
-                <a href="#trial">
+                <a href="#trial" onClick={() => selectPlanForTrial("basic")}>
                   <Button variant="outline" className="w-full text-xs">
                     Choose Basic
                   </Button>
@@ -443,7 +511,7 @@ export default function LandingPage() {
               </div>
 
               <div className="mt-8 pt-6 border-t border-neutral-800">
-                <a href="#trial">
+                <a href="#trial" onClick={() => selectPlanForTrial("pro")}>
                   <Button variant="primary" className="w-full text-xs">
                     Choose Pro Plan
                   </Button>
@@ -489,7 +557,7 @@ export default function LandingPage() {
               </div>
 
               <div className="mt-8 pt-6 border-t border-neutral-800">
-                <a href="#trial">
+                <a href="#trial" onClick={() => selectPlanForTrial("elite")}>
                   <Button variant="outline" className="w-full text-xs">
                     Choose Elite
                   </Button>
@@ -683,65 +751,217 @@ export default function LandingPage() {
               </div>
             </div>
 
-            {/* Free Trial Form */}
-            <Card className="border-neutral-800 bg-neutral-900/90 p-6 sm:p-8">
-              <h3 className="text-lg font-bold text-white">Book a Free 1-Day Trial Pass</h3>
-              <p className="text-xs text-neutral-400 mt-1">
-                Experience the machines, steam bath, and a complimentary fitness test.
-              </p>
+            {/* Free Trial Form (Specifications: Full Name, Phone, Email, Preferred Date, Preferred Time, Interested Membership, Message) */}
+            <Card className="border-neutral-800 bg-neutral-900/95 p-6 sm:p-8 shadow-2xl">
+              <div className="flex items-center justify-between pb-4 border-b border-neutral-800">
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    <Sparkles size={18} className="text-emerald-400" />
+                    Book a Free 1-Day Trial Pass
+                  </h3>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    Experience all equipment, recovery steam bath & trainer consultation.
+                  </p>
+                </div>
+                <Badge variant="success">Zero Obligation</Badge>
+              </div>
 
               {bookingSuccess ? (
-                <div className="mt-6 p-4 rounded-xl bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-xs text-center space-y-2">
-                  <CheckCircle2 size={32} className="mx-auto text-emerald-400" />
-                  <p className="font-bold text-sm text-white">Trial Pass Reserved!</p>
-                  <p>
-                    We have confirmed your pass for {trialName}. Show this confirmation at the front desk when you arrive.
-                  </p>
+                <div className="mt-6 space-y-4">
+                  <div className="p-5 rounded-2xl bg-emerald-950/60 border border-emerald-800 text-emerald-300 text-center space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 flex items-center justify-center mx-auto">
+                      <CheckCircle2 size={28} />
+                    </div>
+                    <div>
+                      <h4 className="text-base font-extrabold text-white">VIP Trial Pass Reserved!</h4>
+                      <p className="text-xs text-neutral-300 mt-1">
+                        Welcome, <strong className="text-white">{bookingSuccess.name}</strong>. Your single-day session has been logged in our front desk pipeline.
+                      </p>
+                    </div>
+
+                    <div className="bg-neutral-950/80 rounded-xl p-3 border border-neutral-800 text-left text-xs space-y-1.5 text-neutral-300">
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Scheduled Date:</span>
+                        <span className="font-semibold text-white">{bookingSuccess.date}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Time Window:</span>
+                        <span className="font-semibold text-emerald-400">{bookingSuccess.time}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-neutral-500">Contact:</span>
+                        <span className="font-semibold text-white">{bookingSuccess.phone}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Instant WhatsApp Reception Confirmation Button */}
+                  <a
+                    href={generateWhatsAppLink(
+                      bookingSuccess.phone,
+                      WhatsAppTemplates.trialConfirmation(
+                        bookingSuccess.name,
+                        bookingSuccess.date,
+                        bookingSuccess.time
+                      )
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block"
+                  >
+                    <Button variant="outline" className="w-full text-xs border-emerald-600/50 text-emerald-400 hover:bg-emerald-950/40">
+                      <MessageCircle size={15} className="mr-2 text-emerald-400" />
+                      Open WhatsApp Pass Confirmation
+                    </Button>
+                  </a>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="w-full text-xs text-neutral-400"
+                    onClick={() => {
+                      setBookingSuccess(null);
+                      setFormData({
+                        name: "",
+                        phone: "",
+                        email: "",
+                        preferredDate: tomorrow,
+                        preferredTime: "07:00 AM - 10:00 AM (Morning)",
+                        planId: plans[0]?.id || "",
+                        message: "",
+                      });
+                    }}
+                  >
+                    Book Another Pass
+                  </Button>
                 </div>
               ) : (
                 <form onSubmit={handleBookTrial} className="mt-6 space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Full Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Aman Verma"
-                      value={trialName}
-                      onChange={(e) => setTrialName(e.target.value)}
-                      className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
-                    />
+                  {errorMsg && (
+                    <div className="p-3 rounded-lg bg-rose-950/50 border border-rose-800 text-rose-300 text-xs">
+                      {errorMsg}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-300 mb-1">
+                        Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. Aman Verma"
+                        value={formData.name}
+                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                        className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-300 mb-1">
+                        Phone Number *
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        placeholder="e.g. +91 98765 43210"
+                        value={formData.phone}
+                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                        className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Phone Number *
+                      Email Address <span className="text-neutral-500 font-normal">(For pass confirmation)</span>
                     </label>
                     <input
-                      type="tel"
-                      required
-                      placeholder="e.g. +91 98765 00000"
-                      value={trialPhone}
-                      onChange={(e) => setTrialPhone(e.target.value)}
-                      className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      type="email"
+                      placeholder="e.g. aman.verma@example.com"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500"
                     />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-300 mb-1">
+                        Preferred Date *
+                      </label>
+                      <input
+                        type="date"
+                        required
+                        value={formData.preferredDate}
+                        onChange={(e) => setFormData({ ...formData, preferredDate: e.target.value })}
+                        className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-medium text-neutral-300 mb-1">
+                        Preferred Time *
+                      </label>
+                      <select
+                        value={formData.preferredTime}
+                        onChange={(e) => setFormData({ ...formData, preferredTime: e.target.value })}
+                        className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                      >
+                        <option value="06:00 AM - 09:00 AM (Early Morning)">06:00 AM - 09:00 AM (Early Morning)</option>
+                        <option value="09:00 AM - 12:00 PM (Morning)">09:00 AM - 12:00 PM (Morning)</option>
+                        <option value="04:00 PM - 07:00 PM (Evening)">04:00 PM - 07:00 PM (Evening)</option>
+                        <option value="07:00 PM - 10:00 PM (Night)">07:00 PM - 10:00 PM (Night)</option>
+                      </select>
+                    </div>
                   </div>
 
                   <div>
                     <label className="block text-xs font-medium text-neutral-300 mb-1">
-                      Preferred Date
+                      Interested Membership Plan
                     </label>
-                    <input
-                      type="date"
-                      value={trialDate}
-                      onChange={(e) => setTrialDate(e.target.value)}
-                      className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3.5 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    <select
+                      value={formData.planId}
+                      onChange={(e) => setFormData({ ...formData, planId: e.target.value })}
+                      className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white focus:outline-none focus:border-emerald-500"
+                    >
+                      {plans.length > 0 ? (
+                        plans.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.name} — ₹{p.price.toLocaleString("en-IN")}/mo {p.isPopular ? "(Recommended)" : ""}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="">Pro Tier — ₹1,999/mo (Recommended)</option>
+                          <option value="">Basic Tier — ₹999/mo</option>
+                          <option value="">Elite Tier — ₹3,499/mo</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-neutral-300 mb-1">
+                      Fitness Goals / Notes <span className="text-neutral-500 font-normal">(Optional)</span>
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="e.g. Looking to improve strength, personal trainer guidance..."
+                      value={formData.message}
+                      onChange={(e) => setFormData({ ...formData, message: e.target.value })}
+                      className="w-full rounded-lg bg-neutral-950 border border-neutral-800 px-3 py-2 text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-emerald-500 resize-none"
                     />
                   </div>
 
-                  <Button type="submit" variant="primary" className="w-full text-xs mt-2">
-                    Claim Free Pass
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    disabled={isSubmitting}
+                    className="w-full text-xs mt-2"
+                  >
+                    {isSubmitting ? "Reserving VIP Pass..." : "Claim Free Trial Pass"}
                   </Button>
                 </form>
               )}

@@ -1,6 +1,9 @@
+// prisma/schema.prisma
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url  	    = env("DATABASE_URL")
+  // uncomment next line if you use Prisma <5.10
+  // directUrl = env("DATABASE_URL_UNPOOLED")
 }
 
 generator client {
@@ -32,9 +35,10 @@ model Member {
   address          String?
   emergencyContact String?
   photoUrl         String?
-  status           String          @default("ACTIVE") // ACTIVE, EXPIRING_SOON, EXPIRED, INACTIVE
+  status           String          @default("ACTIVE") // ACTIVE, EXPIRING_SOON, EXPIRED, FROZEN
   startDate        DateTime        @default(now())
   expiryDate       DateTime
+  qrCode           String?         @unique // unique secure token for QR scanner
   
   planId           String?
   plan             MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
@@ -45,6 +49,10 @@ model Member {
   payments         Payment[]
   attendance       Attendance[]
   invoices         Invoice[]
+  sessions         TrainerSession[]
+  workoutPlans     WorkoutPlan[]
+  dietPlans        DietPlan[]
+  notes            MemberNote[]
 
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
@@ -55,35 +63,199 @@ model Member {
   @@index([expiryDate])
 }
 
+model MemberNote {
+  id        String   @id @default(cuid())
+  memberId  String
+  member    Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  author    String   @default("Admin")
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([memberId])
+}
+
 model MembershipPlan {
-  id          String    @id @default(cuid())
-  name        String    @unique // Basic, Pro, Elite
+  id          String          @id @default(cuid())
+  name        String          @unique // Basic, Pro, Elite, etc.
   price       Float
-  duration    Int       // duration in days (e.g. 30, 90, 365)
+  duration    Int             // duration in days (e.g. 30, 90, 365)
   description String
-  features    String    // JSON stringified array of features
-  isPopular   Boolean   @default(false)
-  isActive    Boolean   @default(true)
+  features    String          // JSON stringified array of features
+  isPopular   Boolean         @default(false)
+  isActive    Boolean         @default(true)
   members     Member[]
   payments    Payment[]
+  leads       Lead[]
+  trialBookings TrialBooking[]
 
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 }
 
 model Trainer {
-  id             String    @id @default(cuid())
+  id             String           @id @default(cuid())
   name           String
   photoUrl       String?
   specialization String
-  experience     String    // e.g. "5 years"
+  experience     String           // e.g. "5 years"
   phone          String
-  email          String    @unique
+  email          String           @unique
   bio            String?
+  availability   String?          @default("Mon-Sat: 6:00 AM - 2:00 PM, 4:00 PM - 9:00 PM")
   members        Member[]
+  sessions       TrainerSession[]
 
-  createdAt      DateTime  @default(now())
-  updatedAt      DateTime  @updatedAt
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model TrainerSession {
+  id          String   @id @default(cuid())
+  trainerId   String
+  trainer     Trainer  @relation(fields: [trainerId], references: [id], onDelete: Cascade)
+  memberId    String
+  member      Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date        DateTime
+  time        String   // e.g. "07:00 AM"
+  duration    Int      @default(60) // minutes
+  type        String   @default("Personal Training") // Personal Training, Consultation, Fitness Assessment, Diet Consultation
+  status      String   @default("SCHEDULED") // SCHEDULED, COMPLETED, CANCELLED, NO_SHOW
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([trainerId])
+  @@index([memberId])
+  @@index([date])
+  @@index([status])
+}
+
+model Lead {
+  id             String          @id @default(cuid())
+  name           String
+  phone          String
+  email          String?
+  source         String          @default("Website") // Website, Instagram, WhatsApp, Walk-in, Referral, Google, Other
+  planId         String?
+  plan           MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  status         String          @default("NEW") // NEW, CONTACTED, TRIAL_BOOKED, TRIAL_COMPLETED, CONVERTED, LOST
+  notes          String?
+  followUpDate   DateTime?
+  trialBooking   TrialBooking?
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([status])
+  @@index([phone])
+  @@index([createdAt])
+}
+
+model TrialBooking {
+  id             String          @id @default(cuid())
+  name           String
+  phone          String
+  email          String?
+  preferredDate  DateTime
+  preferredTime  String          @default("Morning (07:00 AM - 10:00 AM)")
+  planId         String?
+  plan           MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  message        String?
+  status         String          @default("NEW") // NEW, CONFIRMED, COMPLETED, CANCELLED, CONVERTED
+  leadId         String?         @unique
+  lead           Lead?           @relation(fields: [leadId], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([status])
+  @@index([preferredDate])
+}
+
+model Expense {
+  id            String   @id @default(cuid())
+  title         String
+  category      String   // Rent, Electricity, Equipment, Maintenance, Salary, Marketing, Cleaning, Supplies, Other
+  amount        Float
+  date          DateTime @default(now())
+  paymentMethod String   @default("Bank Transfer") // Bank Transfer, UPI, Cash, Card
+  description   String?
+  receipt       String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([category])
+  @@index([date])
+}
+
+model WorkoutPlan {
+  id        String            @id @default(cuid())
+  memberId  String
+  member    Member            @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  title     String            // e.g. "Hypertrophy 4-Day Split"
+  goal      String?           // Muscle Gain, Fat Loss, Strength
+  notes     String?
+  exercises WorkoutExercise[]
+
+  createdAt DateTime          @default(now())
+  updatedAt DateTime          @updatedAt
+
+  @@index([memberId])
+}
+
+model WorkoutExercise {
+  id            String      @id @default(cuid())
+  workoutPlanId String
+  workoutPlan   WorkoutPlan @relation(fields: [workoutPlanId], references: [id], onDelete: Cascade)
+  day           String      // Monday, Tuesday, etc.
+  name          String      // e.g. "Bench Press"
+  sets          Int         @default(4)
+  reps          String      @default("10-12")
+  weight        String?     // e.g. "60 kg"
+  rest          String?     // e.g. "90 sec"
+  notes         String?
+
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([workoutPlanId])
+}
+
+model DietPlan {
+  id        String     @id @default(cuid())
+  memberId  String
+  member    Member     @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  title     String     // e.g. "Lean Bulking Nutrition Guide"
+  calories  Int?       @default(2400)
+  notes     String?
+  meals     DietMeal[]
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  @@index([memberId])
+}
+
+model DietMeal {
+  id         String   @id @default(cuid())
+  dietPlanId String
+  dietPlan   DietPlan @relation(fields: [dietPlanId], references: [id], onDelete: Cascade)
+  name       String   // Breakfast, Mid-Morning Snack, Lunch, Pre-Workout, Dinner
+  time       String   // "8:00 AM"
+  foods      String   // e.g. "Oats, 4 Boiled Eggs, Almond Milk, 1 Banana"
+  calories   Int?
+  protein    String?  // e.g. "35g"
+  carbs      String?  // e.g. "55g"
+  fats       String?  // e.g. "14g"
+  notes      String?
+
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([dietPlanId])
 }
 
 model Payment {
@@ -95,7 +267,7 @@ model Payment {
   plan          MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
   amount        Float
   method        String          // CASH, UPI, CARD, BANK_TRANSFER
-  status        String          // PAID, PENDING, FAILED
+  status        String          // PAID, PENDING, FAILED, REFUNDED
   date          DateTime        @default(now())
   notes         String?
   invoice       Invoice?
@@ -117,6 +289,7 @@ model Invoice {
   member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
   issueDate     DateTime @default(now())
   amount        Float
+  discount      Float    @default(0)
   status        String   @default("PAID") // PAID, PENDING
   pdfUrl        String?
 
@@ -128,16 +301,17 @@ model Invoice {
 }
 
 model Attendance {
-  id        String    @id @default(cuid())
-  memberId  String
-  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
-  date      DateTime  @default(now())
-  checkIn   DateTime  @default(now())
-  checkOut  DateTime?
-  status    String    @default("PRESENT") // PRESENT, ABSENT
+  id         String   @id @default(cuid())
+  memberId   String
+  member     Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date       DateTime @default(now())
+  checkIn    DateTime @default(now())
+  checkOut   DateTime?
+  status     String   @default("PRESENT") // PRESENT, ABSENT
+  method     String   @default("MANUAL")  // QR_SCAN, MANUAL
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([memberId])
   @@index([date])
@@ -147,11 +321,14 @@ model Notification {
   id        String   @id @default(cuid())
   title     String
   message   String
-  type      String   // EXPIRY, PAYMENT, NEW_MEMBER, SYSTEM
+  type      String   // EXPIRY, PAYMENT, NEW_MEMBER, NEW_LEAD, TRIAL_BOOKING, APPOINTMENT, SYSTEM
   isRead    Boolean  @default(false)
   link      String?
+  targetRole String  @default("ADMIN") // ADMIN or MEMBER
+  targetUserId String?
   createdAt DateTime @default(now())
 
   @@index([isRead])
   @@index([createdAt])
+  @@index([targetRole])
 }

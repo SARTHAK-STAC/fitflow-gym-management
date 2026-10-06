@@ -22,6 +22,14 @@ export async function GET() {
           orderBy: { date: "desc" },
           take: 30,
         },
+        workoutPlans: {
+          include: { exercises: true },
+          orderBy: { createdAt: "desc" },
+        },
+        dietPlans: {
+          include: { meals: true },
+          orderBy: { createdAt: "desc" },
+        },
       },
     });
 
