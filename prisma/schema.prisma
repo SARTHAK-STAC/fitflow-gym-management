@@ -1,0 +1,157 @@
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      String   @default("MEMBER") // ADMIN or MEMBER
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  member    Member?
+
+  @@index([email])
+}
+
+model Member {
+  id               String          @id @default(cuid())
+  userId           String?         @unique
+  user             User?           @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name             String
+  email            String          @unique
+  phone            String
+  dateOfBirth      DateTime?
+  gender           String?         // Male, Female, Other
+  address          String?
+  emergencyContact String?
+  photoUrl         String?
+  status           String          @default("ACTIVE") // ACTIVE, EXPIRING_SOON, EXPIRED, INACTIVE
+  startDate        DateTime        @default(now())
+  expiryDate       DateTime
+  
+  planId           String?
+  plan             MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  
+  trainerId        String?
+  trainer          Trainer?        @relation(fields: [trainerId], references: [id], onDelete: SetNull)
+
+  payments         Payment[]
+  attendance       Attendance[]
+  invoices         Invoice[]
+
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([email])
+  @@index([phone])
+  @@index([status])
+  @@index([expiryDate])
+}
+
+model MembershipPlan {
+  id          String    @id @default(cuid())
+  name        String    @unique // Basic, Pro, Elite
+  price       Float
+  duration    Int       // duration in days (e.g. 30, 90, 365)
+  description String
+  features    String    // JSON stringified array of features
+  isPopular   Boolean   @default(false)
+  isActive    Boolean   @default(true)
+  members     Member[]
+  payments    Payment[]
+
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model Trainer {
+  id             String    @id @default(cuid())
+  name           String
+  photoUrl       String?
+  specialization String
+  experience     String    // e.g. "5 years"
+  phone          String
+  email          String    @unique
+  bio            String?
+  members        Member[]
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+}
+
+model Payment {
+  id            String          @id @default(cuid())
+  transactionId String          @unique
+  memberId      String
+  member        Member          @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  planId        String?
+  plan          MembershipPlan? @relation(fields: [planId], references: [id], onDelete: SetNull)
+  amount        Float
+  method        String          // CASH, UPI, CARD, BANK_TRANSFER
+  status        String          // PAID, PENDING, FAILED
+  date          DateTime        @default(now())
+  notes         String?
+  invoice       Invoice?
+
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([memberId])
+  @@index([status])
+  @@index([date])
+}
+
+model Invoice {
+  id            String   @id @default(cuid())
+  invoiceNumber String   @unique
+  paymentId     String   @unique
+  payment       Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  memberId      String
+  member        Member   @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  issueDate     DateTime @default(now())
+  amount        Float
+  status        String   @default("PAID") // PAID, PENDING
+  pdfUrl        String?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([invoiceNumber])
+  @@index([memberId])
+}
+
+model Attendance {
+  id        String    @id @default(cuid())
+  memberId  String
+  member    Member    @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  date      DateTime  @default(now())
+  checkIn   DateTime  @default(now())
+  checkOut  DateTime?
+  status    String    @default("PRESENT") // PRESENT, ABSENT
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([memberId])
+  @@index([date])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  title     String
+  message   String
+  type      String   // EXPIRY, PAYMENT, NEW_MEMBER, SYSTEM
+  isRead    Boolean  @default(false)
+  link      String?
+  createdAt DateTime @default(now())
+
+  @@index([isRead])
+  @@index([createdAt])
+}
